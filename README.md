@@ -1,5 +1,7 @@
 # DiskDoctor
 
+[![CI](https://github.com/WRH6666/DiskDoctor/actions/workflows/ci.yml/badge.svg)](https://github.com/WRH6666/DiskDoctor/actions/workflows/ci.yml)
+
 > 硬盘空间体检工具。不是又一个 treemap 查看器 —— 它回答的是「**这里能不能删**」。
 
 只支持 **Windows**。完整方案见 [`docs/方案设计-磁盘空间治理工具.md`](docs/方案设计-磁盘空间治理工具.md)。
