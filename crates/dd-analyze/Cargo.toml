@@ -1,0 +1,15 @@
+[package]
+name = "dd-analyze"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+dd-core = { workspace = true }
+dd-rules = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+# 测试需要真的扫一遍目录来验证「扫描子目录时上层语境不丢」——
+# 这正是那个 bug 的现场，纯构造数据测不出来。
+dd-scanner = { workspace = true }

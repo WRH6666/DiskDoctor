@@ -1,0 +1,51 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/dd-core",
+    "crates/dd-rules",
+    "crates/dd-scanner",
+    "crates/dd-analyze",
+    "crates/dd-exec",
+    "crates/dd-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["DiskDoctor"]
+
+[workspace.dependencies]
+dd-core = { path = "crates/dd-core" }
+dd-rules = { path = "crates/dd-rules" }
+dd-scanner = { path = "crates/dd-scanner" }
+dd-analyze = { path = "crates/dd-analyze" }
+dd-exec = { path = "crates/dd-exec" }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+thiserror = "2"
+rayon = "1.10"
+jwalk = "0.8"
+# 刻意关掉 clap 的默认特性里的 `color`：
+# color 会引入 anstream → anstyle-query / anstyle-wincon → windows-sys，
+# 而 windows-sys 的 build script 会调 dlltool 现场生成 import library，
+# 在 GNU 工具链（+ MinGW 自带 dlltool）下这一步会失败。
+# 关掉 color 后依赖树里就没有 windows-sys 了，Win32 调用改用手工 FFI。
+# 如果之后切回 MSVC 工具链又想恢复彩色输出，把 "color" 加回 features 即可。
+clap = { version = "4", default-features = false, features = [
+    "std",
+    "derive",
+    "help",
+    "usage",
+    "error-context",
+    "suggestions",
+] }
+anyhow = "1"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true

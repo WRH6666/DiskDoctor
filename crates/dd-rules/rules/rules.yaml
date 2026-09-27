@@ -1,0 +1,2776 @@
+# DiskDoctor 归因规则库
+#
+# 求值顺序：按下面的书写顺序自上而下，**首次命中即停止**。
+# 因此必须由「具体」到「宽泛」排列，例如 appdata\local\npm-cache 一定要排在 appdata 之前。
+# 需要打断顺序时用 priority（数值大的先算）。
+#
+# safety 取值：
+#   safe            可安全回收，删了能自动重建 / 重新下载
+#   caution         需要你确认，可能含个人数据
+#   keep            用户数据，本工具不主动清理
+#   system-managed  系统托管，禁止直接删，只能走官方命令
+#   protected       硬黑名单，永不触碰
+#
+# action 取值：delete / command / compact / review / none
+
+# ===========================================================================
+# A. 硬保护：碰了会让系统或软件出问题
+# ===========================================================================
+
+- id: windows-winsxs
+  name: 组件存储 WinSxS
+  why: 用 NTFS 硬链接保存所有系统组件的历史版本，手动删除会导致系统无法启动、更新失败、SFC 失效。它显示的体积有很大一部分是硬链接，并不真实占用。
+  recovery: 无需恢复；系统会在后续更新中自行补齐所需组件。
+  match:
+    kind: path-suffix
+    pattern: 'windows\winsxs'
+  category: component-store
+  safety: system-managed
+  action: command
+  command: 'Dism.exe /Online /Cleanup-Image /StartComponentCleanup'
+  priority: 100
+
+- id: windows-driverstore
+  name: 驱动仓库 DriverStore
+  why: 保存每个驱动硬件的所有历史版本，用于驱动回滚。手动删除会导致设备无法加载驱动、无法回滚。它的体积同样包含大量硬链接。
+  recovery: 无法恢复。清理旧驱动请用 pnputil 逐条确认，不建议批量操作。
+  match:
+    kind: path-suffix
+    pattern: 'windows\system32\driverstore'
+  category: driver-store
+  safety: system-managed
+  action: review
+  priority: 100
+
+- id: windows-installer
+  name: MSI 安装缓存
+  why: 保存已安装程序的原始安装包，卸载和「修复」时要用。删掉会导致很多软件无法卸载或修复，且卸载列表会残留。
+  recovery: 无法恢复，只能重装对应软件。
+  match:
+    kind: path-suffix
+    pattern: 'windows\installer'
+  category: app-data
+  safety: protected
+  action: none
+  priority: 100
+
+- id: windows-system32
+  name: 系统核心目录
+  why: 操作系统本体。
+  recovery: 只能重装系统。
+  match:
+    kind: path-suffix
+    pattern: 'windows\system32'
+  category: app-data
+  safety: protected
+  action: none
+  priority: 99
+
+- id: windows-syswow64
+  name: 32 位兼容层
+  why: 运行 32 位程序所需的系统组件。
+  recovery: 只能重装系统。
+  match:
+    kind: path-suffix
+    pattern: 'windows\syswow64'
+  category: app-data
+  safety: protected
+  action: none
+  priority: 99
+
+- id: windows-boot
+  name: 启动相关文件
+  why: 引导管理器与启动配置，删除后系统无法启动。
+  recovery: 需要用系统安装介质修复引导。
+  match:
+    kind: path-suffix
+    pattern: 'windows\boot'
+  category: app-data
+  safety: protected
+  action: none
+  priority: 99
+
+- id: windows-servicing
+  name: 系统服务组件
+  why: 系统维护与更新机制的核心组件。
+  recovery: 只能重装系统。
+  match:
+    kind: path-suffix
+    pattern: 'windows\servicing'
+  category: app-data
+  safety: protected
+  action: none
+  priority: 99
+
+- id: windows-assembly
+  name: .NET 程序集缓存
+  why: .NET 全局程序集缓存，被大量程序依赖。
+  recovery: 部分可通过重新安装 .NET 运行库恢复。
+  match:
+    kind: path-suffix
+    pattern: 'windows\assembly'
+  category: app-data
+  safety: protected
+  action: none
+  priority: 99
+
+- id: windows-fonts
+  name: 系统字体
+  why: 系统内置字体，删除会导致界面文字显示异常。
+  recovery: 从其他机器或系统镜像中恢复。
+  match:
+    kind: path-suffix
+    pattern: 'windows\fonts'
+  category: app-data
+  safety: protected
+  action: none
+  priority: 98
+
+- id: windows-systemapps
+  name: 系统应用
+  why: 开始菜单、设置、资源管理器等系统内置应用。
+  recovery: 只能通过系统修复或重装恢复。
+  match:
+    kind: path-suffix
+    pattern: 'windows\systemapps'
+  category: app-data
+  safety: protected
+  action: none
+  priority: 98
+
+- id: windows-inf
+  name: 驱动安装信息
+  why: 驱动安装所需的 inf 配置文件与安装日志。
+  recovery: 需要重新安装对应驱动。
+  match:
+    kind: path-suffix
+    pattern: 'windows\inf'
+  category: app-data
+  safety: protected
+  action: none
+  priority: 98
+
+- id: program-files
+  name: 已安装程序
+  why: 通过安装程序安装的软件本体，直接删除会留下无法清除的注册表残留。
+  recovery: 卸载请走「设置 → 应用 → 已安装的应用」。
+  match:
+    kind: path-suffix
+    pattern: 'program files'
+  category: app-data
+  safety: protected
+  action: none
+  priority: 95
+
+- id: program-files-x86
+  name: 已安装程序（32 位）
+  why: 32 位软件本体，同上。
+  recovery: 卸载请走「设置 → 应用 → 已安装的应用」。
+  match:
+    kind: path-suffix
+    pattern: 'program files (x86)'
+  category: app-data
+  safety: protected
+  action: none
+  priority: 95
+
+- id: windows-windowsapps
+  name: 商店应用
+  why: 从 Microsoft Store 安装的应用，必须通过系统卸载。
+  recovery: 在「已安装的应用」中重新安装。
+  match:
+    kind: path-suffix
+    pattern: 'program files\windowsapps'
+  category: app-data
+  safety: protected
+  action: none
+  priority: 96
+
+# ===========================================================================
+# B. 系统托管：只能走官方渠道回收
+# ===========================================================================
+
+- id: hiberfil
+  name: 休眠文件
+  why: 系统休眠时把内存内容写到这里，体积约等于物理内存。关掉休眠即可释放，代价是失去「休眠」功能，以及「快速启动」也会一并失效。
+  recovery: 执行 powercfg /h on 可恢复，文件会重新生成。
+  match:
+    kind: name
+    pattern: 'hiberfil.sys'
+  category: hibernation-file
+  safety: system-managed
+  action: command
+  command: 'powercfg /h off'
+  priority: 97
+
+- id: pagefile
+  name: 虚拟内存页面文件
+  why: 内存不够时系统把数据换到这里。**绝对不能直接删除**，会导致程序崩溃甚至蓝屏。正确做法是把它迁到别的盘，或者设置一个较小的固定值。
+  recovery: 系统属性的虚拟内存设置里改回来，或删除后重启由系统自动重建。
+  match:
+    kind: name
+    pattern: 'pagefile.sys'
+  category: page-file
+  safety: system-managed
+  action: review
+  priority: 97
+
+- id: swapfile
+  name: UWP 交换文件
+  why: 供商店应用使用的交换文件，由 system 进程独占，无法手动删除。
+  recovery: 系统自动管理，无需干预。
+  match:
+    kind: name
+    pattern: 'swapfile.sys'
+  category: page-file
+  safety: system-managed
+  action: none
+  priority: 97
+
+- id: system-volume-information
+  name: 系统还原点 / 卷影副本
+  why: 由卷影复制服务（VSS）维护的历史快照，用于系统还原和「以前的版本」。是很多人 C 盘莫名少几十 GB 的真正原因，而普通工具根本扫不到它。
+  recovery: 删除后无法取回旧快照，但系统会按计划重新创建新的还原点。
+  match:
+    kind: path-suffix
+    pattern: 'system volume information'
+  category: shadow-copy
+  safety: system-managed
+  action: review
+  priority: 96
+
+- id: recovery-image
+  name: 恢复分区镜像
+  why: 系统重置用的恢复镜像。
+  recovery: 需要从系统安装介质重建。
+  match:
+    kind: name-glob
+    pattern: 'winre.wim'
+  category: app-data
+  safety: system-managed
+  action: none
+  priority: 96
+
+# ===========================================================================
+# C. 系统更新残留（可回收）
+# ===========================================================================
+
+- id: windows-old
+  name: 旧版 Windows 安装
+  why: 大版本升级时保留的上一版系统，用于 10 天内回退。放弃回退后即可删除，**通常能一次回收几十 GB**。
+  recovery: 删除后无法回退到上一个 Windows 版本。
+  match:
+    kind: path-suffix
+    pattern: 'windows.old'
+  category: os-update-leftover
+  safety: safe
+  action: command
+  command: 'cleanmgr.exe /d C:'
+  priority: 95
+
+- id: windows-bt
+  name: 升级临时文件
+  why: 功能更新期间解压的系统文件，升级完成后即为残留。
+  recovery: 无需恢复，删除不影响系统运行。
+  match:
+    kind: name-glob
+    pattern: '$windows.~bt'
+  category: os-update-leftover
+  safety: safe
+  action: delete
+  priority: 95
+
+- id: windows-ws
+  name: 升级暂存文件
+  why: 同上，属于升级过程的中间产物。
+  recovery: 无需恢复。
+  match:
+    kind: name-glob
+    pattern: '$windows.~ws'
+  category: os-update-leftover
+  safety: safe
+  action: delete
+  priority: 95
+
+- id: softwaredistribution-download
+  name: Windows 更新下载缓存
+  why: 已安装更新的原始下载包，安装完成后不再需要。稳妥做法是先停掉 Windows Update 服务再清空。
+  recovery: 无需恢复，后续更新会重新下载。
+  match:
+    kind: path-suffix
+    pattern: 'windows\softwaredistribution\download'
+  category: os-update-leftover
+  safety: safe
+  action: delete
+  priority: 94
+
+- id: delivery-optimization
+  name: 传递优化缓存
+  why: 更新分发用的 P2P 缓存，删掉不影响任何功能。
+  recovery: 无需恢复。
+  match:
+    kind: path-contains
+    pattern: 'softwaredistribution\deliveryoptimization'
+  category: os-update-leftover
+  safety: safe
+  action: delete
+  priority: 93
+
+- id: windows-esd
+  name: 升级镜像暂存
+  why: 系统升级时下载的镜像解压目录。
+  recovery: 无需恢复。
+  match:
+    kind: path-suffix
+    pattern: 'windows\esd'
+  category: os-update-leftover
+  safety: caution
+  action: delete
+  priority: 90
+
+- id: recycle-bin
+  name: 回收站
+  why: 已删除但尚未真正释放的文件。
+  recovery: 清空后无法通过回收站还原。
+  match:
+    kind: path-suffix
+    pattern: '$recycle.bin'
+  category: recycle-bin
+  safety: safe
+  action: command
+  command: 'Clear-RecycleBin -Force'
+  priority: 90
+
+# ===========================================================================
+# D. 开发工具缓存（最大的一类，几乎全部可安全回收）
+# ===========================================================================
+
+- id: npm-cache
+  name: npm 下载缓存
+  why: npm 安装过的包压缩包缓存，删掉只是下次安装时重新下载。
+  recovery: 重新执行 npm install 时自动重建。
+  match:
+    kind: path-suffix
+    pattern: 'appdata\local\npm-cache'
+  category: package-cache
+  safety: safe
+  action: command
+  command: 'npm cache clean --force'
+  priority: 80
+
+- id: npm-cache-roaming
+  name: npm 缓存（旧位置）
+  why: 老版本 npm 的缓存目录，同样可以安全清除。
+  recovery: 自动重建。
+  match:
+    kind: path-suffix
+    pattern: 'appdata\roaming\npm-cache'
+  category: package-cache
+  safety: safe
+  action: delete
+  priority: 80
+
+- id: yarn-cache
+  name: Yarn 缓存
+  why: Yarn 的包缓存，删掉只是重新下载。
+  recovery: 重新执行 yarn install 时自动重建。
+  match:
+    kind: path-suffix
+    pattern: 'appdata\local\yarn\cache'
+  category: package-cache
+  safety: safe
+  action: command
+  command: 'yarn cache clean'
+  priority: 80
+
+- id: yarn-berry-cache
+  name: Yarn Berry 缓存
+  why: Yarn 2+ 在项目 .yarn 目录下维护的包缓存。
+  recovery: 重新执行 yarn install 时自动重建。
+  match:
+    kind: path-contains
+    pattern: '.yarn\cache'
+  category: package-cache
+  safety: safe
+  action: delete
+  priority: 78
+
+- id: pnpm-store
+  name: pnpm 内容寻址存储
+  why: pnpm 用硬链接共享同一份包内容，这里存的就是那些内容。删除后所有 pnpm 项目都需要重新安装依赖。
+  recovery: 重新执行 pnpm install 时自动重建。
+  match:
+    kind: path-contains
+    pattern: '\pnpm-store'
+  category: package-cache
+  safety: safe
+  action: command
+  command: 'pnpm store prune'
+  priority: 80
+
+- id: pip-cache
+  name: pip 下载缓存
+  why: pip 下载过的 wheel 包缓存。
+  recovery: 重新 pip install 时自动重建。
+  match:
+    kind: path-suffix
+    pattern: 'appdata\local\pip\cache'
+  category: package-cache
+  safety: safe
+  action: command
+  command: 'pip cache purge'
+  priority: 80
+
+- id: uv-cache
+  name: uv 下载缓存
+  why: uv 包管理器的缓存目录。
+  recovery: 重新 uv sync 时自动重建。
+  match:
+    kind: path-contains
+    pattern: 'appdata\local\uv\cache'
+  category: package-cache
+  safety: safe
+  action: command
+  command: 'uv cache clean'
+  priority: 80
+
+- id: conda-pkgs-anaconda
+  name: Conda 包缓存（Anaconda）
+  why: Conda 下载的包压缩包，删除不影响已创建的环境。
+  recovery: 重新安装包时自动下载。
+  match:
+    kind: path-contains
+    pattern: 'anaconda3\pkgs'
+  category: package-cache
+  safety: caution
+  action: command
+  command: 'conda clean --all -y'
+  priority: 60
+
+- id: conda-pkgs-miniconda
+  name: Conda 包缓存（Miniconda）
+  why: Conda 下载的包压缩包，删除不影响已创建的环境。
+  recovery: 重新安装包时自动下载。
+  match:
+    kind: path-contains
+    pattern: 'miniconda3\pkgs'
+  category: package-cache
+  safety: caution
+  action: command
+  command: 'conda clean --all -y'
+  priority: 60
+
+- id: cargo-registry-cache
+  name: Cargo 下载缓存
+  why: Rust 依赖的 .crate 压缩包缓存。
+  recovery: 重新 cargo build 时自动下载。
+  match:
+    kind: path-contains
+    pattern: '.cargo\registry\cache'
+  category: package-cache
+  safety: safe
+  action: delete
+  priority: 80
+
+- id: cargo-registry-src
+  name: Cargo 解压依赖
+  why: Rust 依赖解压后的源码，可由缓存重新解压。
+  recovery: 重新 cargo build 时自动重建。
+  match:
+    kind: path-contains
+    pattern: '.cargo\registry\src'
+  category: package-cache
+  safety: safe
+  action: delete
+  priority: 80
+
+- id: cargo-git-checkouts
+  name: Cargo Git 依赖
+  why: 从 git 拉取的依赖副本。
+  recovery: 自动重新拉取。
+  match:
+    kind: path-contains
+    pattern: '.cargo\git\checkouts'
+  category: package-cache
+  safety: safe
+  action: delete
+  priority: 80
+
+- id: gradle-caches
+  name: Gradle 依赖缓存
+  why: Gradle 下载的依赖与构建缓存。
+  recovery: 重新构建时自动下载。
+  match:
+    kind: path-contains
+    pattern: '.gradle\caches'
+  category: package-cache
+  safety: safe
+  action: delete
+  priority: 80
+
+- id: maven-repository
+  name: Maven 本地仓库
+  why: Maven 下载的 jar 包仓库。删除后所有 Maven 项目首次构建都要重新下载。
+  recovery: 重新构建时自动下载。
+  match:
+    kind: path-contains
+    pattern: '.m2\repository'
+  category: package-cache
+  safety: caution
+  action: delete
+  priority: 78
+
+- id: nuget-packages
+  name: NuGet 包缓存
+  why: .NET 依赖包缓存。
+  recovery: 重新 restore 时自动下载。
+  match:
+    kind: path-contains
+    pattern: '.nuget\packages'
+  category: package-cache
+  safety: safe
+  action: command
+  command: 'dotnet nuget locals all --clear'
+  priority: 80
+
+- id: go-mod-cache
+  name: Go 模块缓存
+  why: Go 下载的模块缓存。
+  recovery: 重新 go mod download 时自动下载。
+  match:
+    kind: path-contains
+    pattern: 'go\pkg\mod\cache'
+  category: package-cache
+  safety: safe
+  action: command
+  command: 'go clean -modcache'
+  priority: 80
+
+- id: composer-cache
+  name: Composer 缓存
+  why: PHP 依赖包缓存。
+  recovery: 重新 composer install 时自动下载。
+  match:
+    kind: path-contains
+    pattern: 'composer\cache'
+  category: package-cache
+  safety: safe
+  action: command
+  command: 'composer clear-cache'
+  priority: 80
+
+- id: bun-cache
+  name: Bun 缓存
+  why: Bun 的包缓存。
+  recovery: 重新 bun install 时自动重建。
+  match:
+    kind: path-contains
+    pattern: '.bun\install\cache'
+  category: package-cache
+  safety: safe
+  action: command
+  command: 'bun pm cache rm'
+  priority: 80
+
+- id: deno-cache
+  name: Deno 缓存
+  why: Deno 下载的依赖缓存。
+  recovery: 重新执行时自动下载。
+  match:
+    kind: path-contains
+    pattern: 'deno\cache'
+  category: package-cache
+  safety: safe
+  action: delete
+  priority: 78
+
+- id: playwright-browsers
+  name: Playwright 浏览器
+  why: Playwright 自动下载的 Chromium / Firefox / WebKit 测试浏览器，单个上百 MB。
+  recovery: 执行 npx playwright install 重新下载。
+  match:
+    kind: path-contains
+    pattern: 'ms-playwright'
+  category: package-cache
+  safety: caution
+  action: delete
+  priority: 78
+
+- id: puppeteer-chrome
+  name: Puppeteer 浏览器
+  why: Puppeteer 下载的 Chromium。
+  recovery: 重新安装时自动下载。
+  match:
+    kind: path-contains
+    pattern: '.cache\puppeteer'
+  category: package-cache
+  safety: caution
+  action: delete
+  priority: 75
+
+- id: electron-cache
+  name: Electron 二进制缓存
+  why: Electron 各版本的运行时分发包缓存。
+  recovery: 重新安装依赖时自动下载。
+  match:
+    kind: path-contains
+    pattern: 'appdata\local\electron'
+  category: package-cache
+  safety: safe
+  action: delete
+  priority: 78
+
+- id: node-gyp-cache
+  name: node-gyp 头文件缓存
+  why: 编译原生模块时下载的 Node 头文件。
+  recovery: 编译时自动下载。
+  match:
+    kind: path-contains
+    pattern: 'appdata\local\node-gyp'
+  category: package-cache
+  safety: safe
+  action: delete
+  priority: 76
+
+# ===========================================================================
+# E. IDE / 编辑器缓存
+# ===========================================================================
+
+- id: ide-extensions
+  name: IDE 扩展目录
+  why: 编辑器扩展的安装目录。其中的 `node_modules`、`vendor` 之类**不是**
+     "可重新生成的构建产物"，而是扩展自带的运行时依赖 —— 删掉会让扩展失效
+     （实测过：Python 扩展、Keil 扩展都栽在这上面）。想清理扩展请在编辑器里卸载。
+  recovery: 从扩展市场重新安装对应扩展。
+  match:
+    kind: path-contains
+    pattern: '\extensions\'
+  category: app-data
+  safety: caution
+  action: review
+  priority: 96
+
+- id: jetbrains-caches
+  name: JetBrains IDE 索引缓存
+  why: IntelliJ / PyCharm / GoLand 等的索引与缓存，删除后首次打开项目会重建索引（会卡一会儿），但不丢任何配置和代码。
+  recovery: 下次打开项目时自动重建索引。
+  match:
+    kind: path-glob
+    pattern: 'appdata\local\jetbrains\*\caches'
+  category: ide-cache
+  safety: safe
+  action: delete
+  priority: 82
+
+- id: jetbrains-logs
+  name: JetBrains IDE 日志
+  why: IDE 运行日志，排查完问题即可清理。
+  recovery: 无需恢复。
+  match:
+    kind: path-glob
+    pattern: 'appdata\local\jetbrains\*\log'
+  category: log-file
+  safety: safe
+  action: delete
+  priority: 82
+
+- id: vscode-cache
+  name: VS Code 缓存
+  why: 编辑器缓存、GPU 缓存、网络缓存，删除不影响设置和扩展。
+  recovery: 下次启动自动重建。
+  match:
+    kind: path-glob
+    pattern: 'appdata\roaming\code\*cache'
+  category: ide-cache
+  safety: safe
+  action: delete
+  priority: 82
+
+- id: vscode-cacheddata
+  name: VS Code 编译缓存
+  why: 扩展的编译产物缓存。
+  recovery: 下次启动自动重建。
+  match:
+    kind: path-glob
+    pattern: 'appdata\roaming\code\cacheddata'
+  category: ide-cache
+  safety: safe
+  action: delete
+  priority: 82
+
+- id: vscode-logs
+  name: VS Code 日志
+  why: 编辑器与扩展的运行日志。
+  recovery: 无需恢复。
+  match:
+    kind: path-glob
+    pattern: 'appdata\roaming\code\logs'
+  category: log-file
+  safety: safe
+  action: delete
+  priority: 82
+
+- id: cursor-cache
+  name: Cursor 缓存
+  why: Cursor 编辑器缓存，结构同 VS Code。
+  recovery: 下次启动自动重建。
+  match:
+    kind: path-glob
+    pattern: 'appdata\roaming\cursor\*cache'
+  category: ide-cache
+  safety: safe
+  action: delete
+  priority: 82
+
+- id: cursor-logs
+  name: Cursor 日志
+  why: 编辑器运行日志。
+  recovery: 无需恢复。
+  match:
+    kind: path-glob
+    pattern: 'appdata\roaming\cursor\logs'
+  category: log-file
+  safety: safe
+  action: delete
+  priority: 82
+
+- id: vscode-extensions
+  name: VS Code 扩展
+  why: 已安装的扩展目录，删除后需要重新安装。
+  recovery: 从扩展市场重新安装。
+  match:
+    kind: path-suffix
+    pattern: '.vscode\extensions'
+  category: ide-cache
+  safety: caution
+  action: review
+  priority: 70
+
+- id: dotnet-vs-cache
+  name: Visual Studio 组件缓存
+  why: VS 的组件模型缓存，删除后首次启动会变慢。
+  recovery: 下次启动自动重建。
+  match:
+    kind: path-contains
+    pattern: 'visualstudio\componentmodelcache'
+  category: ide-cache
+  safety: safe
+  action: delete
+  priority: 80
+
+- id: dotnet-vs-temp
+  name: Visual Studio 临时目录
+  why: VS 的解决方案级临时文件目录，可安全删除。
+  recovery: 打开解决方案时自动重建。
+  match:
+    kind: name
+    pattern: '.vs'
+  category: ide-cache
+  safety: safe
+  action: delete
+  priority: 70
+  unless-below:
+    # 注：锚点 &app_context 定义在 J 节，本规则位于其之前无法用别名引用，
+    # 故在此写明完整列表。修改语境定义时**记得同步这两处**（见 validate_rules.py 的校验）。
+    - '\extensions\'
+    - '\resources\app'
+    - 'app.asar'
+    - '\programs\'
+    - '\runtimes\'
+    - '\sandbox_runtime'
+    - '\site-packages\'
+    - '\lib\python'
+    - '\lib\node'
+    - '\.vscode\'
+    - '\.qoder\'
+    - '\.cursor\'
+    - '\.windsurf\'
+    - '\.trae'
+
+# ===========================================================================
+# F. 浏览器缓存
+# ===========================================================================
+
+- id: chrome-cache
+  name: Chrome 缓存
+  why: 网页缓存、代码缓存、GPU 缓存。删除不影响书签、密码、登录状态。
+  recovery: 浏览网页时自动重建。
+  match:
+    kind: path-glob
+    pattern: 'appdata\local\google\chrome\user data\*\cache'
+  category: browser-cache
+  safety: safe
+  action: delete
+  priority: 80
+
+- id: chrome-code-cache
+  name: Chrome 代码缓存
+  why: JavaScript 编译结果缓存。
+  recovery: 自动重建。
+  match:
+    kind: path-glob
+    pattern: 'appdata\local\google\chrome\user data\*\code cache'
+  category: browser-cache
+  safety: safe
+  action: delete
+  priority: 80
+
+- id: chrome-gpu-cache
+  name: Chrome GPU 缓存
+  why: 图形渲染着色器缓存。
+  recovery: 自动重建。
+  match:
+    kind: path-glob
+    pattern: 'appdata\local\google\chrome\user data\*\gpucache'
+  category: browser-cache
+  safety: safe
+  action: delete
+  priority: 80
+
+- id: edge-cache
+  name: Edge 缓存
+  why: Edge 浏览器的网页与代码缓存，删除不影响收藏夹和密码。
+  recovery: 自动重建。
+  match:
+    kind: path-glob
+    pattern: 'appdata\local\microsoft\edge\user data\*\cache'
+  category: browser-cache
+  safety: safe
+  action: delete
+  priority: 80
+
+- id: edge-gpu-cache
+  name: Edge GPU 缓存
+  why: 图形渲染着色器缓存。**注意它不叫 Cache 而叫 GPUCache**，
+     所以只按 `*\cache` 匹配的规则会漏掉它 —— 这类"名字不标准"的缓存
+     是分析工具最常见的漏网之鱼。
+  recovery: 自动重建。
+  match:
+    kind: path-glob
+    pattern: 'appdata\local\microsoft\edge\user data\*\gpucache'
+  category: browser-cache
+  safety: safe
+  action: delete
+  priority: 80
+
+- id: shader-cache
+  name: 浏览器着色器缓存
+  why: Chromium 系浏览器（Chrome / Edge / 各类 Electron 应用）共有的 GPU
+     着色器缓存，通常每个几百 MB。名字在 Chrome 叫 GrShaderCache、
+     在 Edge 叫 ShaderCache，所以这里按后缀匹配一次覆盖。
+  recovery: 自动重建。
+  match:
+    kind: path-glob
+    pattern: '*shadercache'
+  category: browser-cache
+  safety: safe
+  action: delete
+  priority: 78
+
+- id: edge-code-cache
+  name: Edge 代码缓存
+  why: JavaScript 编译结果缓存。
+  recovery: 自动重建。
+  match:
+    kind: path-glob
+    pattern: 'appdata\local\microsoft\edge\user data\*\code cache'
+  category: browser-cache
+  safety: safe
+  action: delete
+  priority: 80
+
+- id: firefox-cache
+  name: Firefox 缓存
+  why: Firefox 配置文件下的 cache2 缓存目录，删除不影响书签与登录状态。
+  recovery: 浏览网页时自动重建。
+  match:
+    kind: path-glob
+    pattern: '*\mozilla\firefox\profiles\*\cache2'
+  category: browser-cache
+  safety: safe
+  action: delete
+  priority: 80
+
+# ===========================================================================
+# G. 临时文件、日志、转储
+# ===========================================================================
+
+- id: user-temp
+  name: 用户临时文件夹
+  why: 程序运行时产生的临时文件。个别正在使用中的文件删不掉，跳过即可，无害。
+  recovery: 无需恢复。
+  match:
+    kind: path-suffix
+    pattern: 'appdata\local\temp'
+  category: temp-file
+  safety: safe
+  action: delete
+  priority: 85
+
+- id: windows-temp
+  name: 系统临时文件夹
+  why: 系统级临时文件。
+  recovery: 无需恢复。
+  match:
+    kind: path-suffix
+    pattern: 'windows\temp'
+  category: temp-file
+  safety: safe
+  action: delete
+  priority: 85
+
+- id: windows-prefetch
+  name: 预读取缓存
+  why: 加速程序启动的预读数据，删除后首次启动程序会稍慢，之后自动重建。
+  recovery: 系统自动重建。
+  match:
+    kind: path-suffix
+    pattern: 'windows\prefetch'
+  category: temp-file
+  safety: safe
+  action: delete
+  priority: 84
+
+- id: windows-minidump
+  name: 蓝屏小转储
+  why: 系统崩溃时写入的内存转储，每份几十到几百 MB。
+  recovery: 无需恢复；需要排查崩溃原因时才有保留价值。
+  match:
+    kind: path-suffix
+    pattern: 'windows\minidump'
+  category: crash-dump
+  safety: safe
+  action: delete
+  priority: 85
+
+- id: windows-livekernelreports
+  name: 内核崩溃报告
+  why: 内核异常时生成的报告文件，可能很大。
+  recovery: 无需恢复。
+  match:
+    kind: path-suffix
+    pattern: 'windows\livekernelreports'
+  category: crash-dump
+  safety: safe
+  action: delete
+  priority: 85
+
+- id: memory-dmp
+  name: 内存转储
+  why: 内核崩溃的完整内存转储，体积等于物理内存大小甚至更大。
+  recovery: 无需恢复。
+  match:
+    kind: name
+    pattern: 'memory.dmp'
+  category: crash-dump
+  safety: safe
+  action: delete
+  priority: 86
+
+- id: wer-local
+  name: 错误报告（用户级）
+  why: Windows 错误报告存档。
+  recovery: 无需恢复。
+  match:
+    kind: path-contains
+    pattern: 'windows\wer'
+  category: crash-dump
+  safety: safe
+  action: delete
+  priority: 80
+
+- id: windows-logs
+  name: 系统日志
+  why: 系统与组件的运行日志。CBS 日志偶尔会涨到几 GB，属于典型的「系统自己吃掉的」空间。
+  recovery: 无需恢复。
+  match:
+    kind: path-suffix
+    pattern: 'windows\logs'
+  category: log-file
+  safety: safe
+  action: delete
+  priority: 75
+
+- id: windows-panther
+  name: 安装过程日志
+  why: 系统安装与升级过程日志。
+  recovery: 无需恢复。
+  match:
+    kind: path-suffix
+    pattern: 'windows\panther'
+  category: log-file
+  safety: caution
+  action: delete
+  priority: 74
+
+- id: thumbcache
+  name: 缩略图缓存
+  why: 资源管理器为图片视频生成的缩略图数据库，系统占用时删不掉，跳过即可。
+  recovery: 浏览文件夹时自动重建。
+  match:
+    kind: name-glob
+    pattern: 'thumbcache_*.db'
+  category: thumbnail-cache
+  safety: safe
+  action: delete
+  priority: 80
+
+- id: iconcache
+  name: 图标缓存
+  why: 程序图标缓存。
+  recovery: 自动重建。
+  match:
+    kind: name-glob
+    pattern: 'iconcache_*.db'
+  category: thumbnail-cache
+  safety: safe
+  action: delete
+  priority: 80
+
+- id: fontcache
+  name: 字体缓存
+  why: 系统字体缓存数据。
+  recovery: 自动重建。
+  match:
+    kind: path-contains
+    pattern: 'fontcache'
+  category: thumbnail-cache
+  safety: caution
+  action: delete
+  priority: 70
+
+- id: log-files
+  name: 日志文件
+  why: 各类程序写出的 .log 文件，通常只有排查问题才有价值。
+  recovery: 无需恢复。
+  match:
+    kind: ext
+    pattern: 'log'
+  category: log-file
+  safety: caution
+  action: delete
+  priority: 20
+
+# ===========================================================================
+# H. 聊天 / 网盘 / 办公软件（本土应用，国外工具基本不覆盖）
+# ===========================================================================
+
+- id: wechat-files
+  name: 微信聊天文件
+  why: 微信接收的图片、视频、文件和历史消息数据库。**这里几乎一定有你要留的东西**，请逐项确认，不要整目录清空。
+  recovery: 删除后无法从本机恢复，需要对方重新发送。
+  match:
+    kind: path-contains
+    pattern: 'wechat files'
+  category: im-app
+  safety: caution
+  action: review
+  priority: 72
+
+- id: wechat-xwechat
+  name: 微信 4.0 数据目录
+  why: 新版微信的数据目录，包含聊天记录与缓存文件。
+  recovery: 删除后聊天记录无法从本机恢复。
+  match:
+    kind: path-contains
+    pattern: 'xwechat_files'
+  category: im-app
+  safety: caution
+  action: review
+  priority: 72
+
+- id: wechat-cache
+  name: 微信缓存
+  why: 微信的图片、视频、表情缓存，可在微信「设置 → 通用 → 存储空间」里安全清理。
+  recovery: 重新查看聊天记录时会重新下载。
+  match:
+    kind: path-glob
+    pattern: 'appdata\roaming\tencent\wechat\*\cache'
+  category: im-app
+  safety: safe
+  action: review
+  priority: 76
+
+- id: qq-files
+  name: QQ 文件与聊天记录
+  why: QQ 接收的文件与消息数据库。
+  recovery: 删除后无法从本机恢复。
+  match:
+    kind: path-contains
+    pattern: 'tencent files'
+  category: im-app
+  safety: caution
+  action: review
+  priority: 72
+
+- id: qq-nt
+  name: QQ NT 版数据
+  why: 新版 QQ 的数据目录。
+  recovery: 删除后聊天记录无法从本机恢复。
+  match:
+    kind: path-contains
+    pattern: 'nt_qq'
+  category: im-app
+  safety: caution
+  action: review
+  priority: 72
+
+- id: dingtalk
+  name: 钉钉数据
+  why: 钉钉的本地缓存与文件数据。
+  recovery: 重新登录后缓存会重建，本地文件需重新下载。
+  match:
+    kind: path-contains
+    pattern: 'dingtalk'
+  category: im-app
+  safety: caution
+  action: review
+  priority: 70
+
+- id: wps-backup
+  name: WPS 备份与云同步
+  why: WPS 的文档备份文件与云同步缓存。备份文件可能是你唯一的救命稻草，请谨慎。
+  recovery: 备份文件删除后无法恢复。
+  match:
+    kind: path-contains
+    pattern: 'kingsoft'
+  category: im-app
+  safety: caution
+  action: review
+  priority: 70
+
+- id: baidu-netdisk
+  name: 百度网盘缓存
+  why: 网盘的下载缓存与缩略图。
+  recovery: 重新下载时重建。
+  match:
+    kind: path-contains
+    pattern: 'baidunetdisk'
+  category: im-app
+  safety: caution
+  action: review
+  priority: 70
+
+- id: thunder
+  name: 迅雷下载数据
+  why: 迅雷的下载缓存与分片文件。
+  recovery: 未完成的下载任务会丢失进度。
+  match:
+    kind: path-contains
+    pattern: 'thunder'
+  category: im-app
+  safety: caution
+  action: review
+  priority: 70
+
+- id: tencent-meeting
+  name: 腾讯会议录制与缓存
+  why: 会议录制文件与临时缓存。**录制文件删了就没了**，请确认后再动。
+  recovery: 录制文件无法恢复。
+  match:
+    kind: path-contains
+    pattern: 'tencentmeeting'
+  category: im-app
+  safety: caution
+  action: review
+  priority: 70
+
+# ===========================================================================
+# I. 虚拟磁盘 / 转储（可压缩，不必删）
+# ===========================================================================
+
+- id: wsl-vhdx
+  name: WSL 虚拟磁盘
+  why: WSL2 的 Linux 根文件系统镜像。**它在资源管理器里几乎不显示占用**，是 C 盘莫名少几十 GB 的常见元凶。删除等于删掉整个 Linux 发行版，正确做法是压缩它。
+  recovery: 压缩只是回收未使用的块，数据不丢；误删则需要重新安装发行版。
+  match:
+    kind: name
+    pattern: 'ext4.vhdx'
+  category: virtual-disk
+  safety: caution
+  action: compact
+  priority: 76
+
+- id: vhdx-generic
+  name: 虚拟磁盘镜像
+  why: 虚拟机的磁盘镜像。删除会丢失整台虚拟机，正确做法是压缩（回收未使用块）或迁移到其他盘。
+  recovery: 压缩不丢数据。
+  match:
+    kind: name-glob
+    pattern: '*.vhdx'
+  category: virtual-disk
+  safety: caution
+  action: compact
+  priority: 70
+
+- id: vmdk
+  name: VMware 虚拟磁盘
+  why: VMware 虚拟机磁盘。
+  recovery: 压缩不丢数据。
+  match:
+    kind: name-glob
+    pattern: '*.vmdk'
+  category: virtual-disk
+  safety: caution
+  action: compact
+  priority: 70
+
+- id: vdi
+  name: VirtualBox 虚拟磁盘
+  why: VirtualBox 虚拟机磁盘。
+  recovery: 压缩不丢数据。
+  match:
+    kind: name-glob
+    pattern: '*.vdi'
+  category: virtual-disk
+  safety: caution
+  action: compact
+  priority: 70
+
+- id: qcow2
+  name: QEMU 虚拟磁盘
+  why: QEMU/KVM 虚拟机磁盘镜像。
+  recovery: 压缩不丢数据。
+  match:
+    kind: name-glob
+    pattern: '*.qcow2'
+  category: virtual-disk
+  safety: caution
+  action: compact
+  priority: 70
+
+# ===========================================================================
+# J. 构建产物（名字规则，跨项目通用）
+#
+# ⚠ 这一节的所有规则都带 `unless-below` 语境约束，这是修一个真实事故的结果：
+#
+#   `C:\Users\me\.vscode\extensions\ms-python.python-xxx\out\client\node_modules`
+#   被 `node-modules` 规则判成「可安全回收」—— 而那是 **Python 扩展自带的
+#   运行时依赖**，删了扩展直接失效。
+#
+# 靠调 priority 压不住：那要求每新增一个 IDE / 应用目录，都得记得给它设一个
+# 比 68 更高的优先级，迟早会漏。语境约束是加法式的 —— 声明一条"可重建"规则时，
+# 顺手说清它在哪些语境下不成立即可，新增 IDE 目录时无需改这些规则。
+#
+# 约束集用 YAML 锚点定义一次（见下面的 &app_context），后续规则用 *app_context 引用。
+# 判断依据：祖先路径里出现任一片段，就说明"这是已安装软件的组成部分，
+# 不是用户自己的项目"，此时"删了能重新生成"的假设不成立。
+#
+# 注意：`.vscode` / `.qoder` / `.cursor` 这些 IDE 数据目录下的 extensions
+# 子目录用的是同一个命名约定，所以 `\extensions\` 一条就覆盖了所有 IDE。
+# ===========================================================================
+
+- id: node-modules
+  name: Node.js 依赖目录
+  why: 由 npm / pnpm / yarn 安装生成，**不含任何你自己写的代码**，随时可以重新生成。
+  recovery: 在项目目录重新执行 npm install（或 pnpm / yarn install）。
+  match:
+    kind: name
+    pattern: 'node_modules'
+  category: build-artifact
+  safety: safe
+  action: delete
+  priority: 68
+  unless-below: &app_context
+    - '\extensions\'          # IDE 扩展目录（.vscode/.qoder/.cursor/... 通用）
+    - '\resources\app'        # Electron 应用资源
+    - 'app.asar'              # Electron 打包产物
+    - '\programs\'            # 用户级程序安装目录
+    - '\runtimes\'            # 捆绑运行时
+    - '\sandbox_runtime'      # 沙箱运行时
+    - '\site-packages\'       # Python 第三方库
+    - '\lib\python'           # 嵌入式 Python
+    - '\lib\node'             # 嵌入式 Node
+    - '\.vscode\'
+    - '\.qoder\'
+    - '\.cursor\'
+    - '\.windsurf\'
+    - '\.trae'
+
+- id: pycache
+  name: Python 字节码缓存
+  why: Python 解释器自动生成的 .pyc 缓存，删除无任何影响。
+  recovery: 下次运行时自动重生成。
+  match:
+    kind: name
+    pattern: '__pycache__'
+  category: build-artifact
+  safety: safe
+  action: delete
+  priority: 68
+  unless-below: *app_context
+
+- id: pytest-cache
+  name: pytest 缓存
+  why: 测试框架的缓存目录。
+  recovery: 下次跑测试时自动重建。
+  match:
+    kind: name
+    pattern: '.pytest_cache'
+  category: build-artifact
+  safety: safe
+  action: delete
+  priority: 68
+  unless-below: *app_context
+
+- id: mypy-cache
+  name: mypy 类型检查缓存
+  why: 类型检查结果缓存。
+  recovery: 下次运行时自动重建。
+  match:
+    kind: name
+    pattern: '.mypy_cache'
+  category: build-artifact
+  safety: safe
+  action: delete
+  priority: 68
+  unless-below: *app_context
+
+- id: ruff-cache
+  name: Ruff 缓存
+  why: 代码检查工具缓存。
+  recovery: 自动重建。
+  match:
+    kind: name
+    pattern: '.ruff_cache'
+  category: build-artifact
+  safety: safe
+  action: delete
+  priority: 68
+  unless-below: *app_context
+
+- id: tox-cache
+  name: tox 测试环境
+  why: tox 创建的隔离测试环境。
+  recovery: 下次运行 tox 时重建。
+  match:
+    kind: name
+    pattern: '.tox'
+  category: build-artifact
+  safety: safe
+  action: delete
+  priority: 68
+  unless-below: *app_context
+
+- id: nextjs-cache
+  name: Next.js 构建缓存
+  why: Next.js 的编译产物与增量构建缓存。
+  recovery: 重新执行 npm run build 或启动 dev server。
+  match:
+    kind: name
+    pattern: '.next'
+  category: build-artifact
+  safety: safe
+  action: delete
+  priority: 66
+  unless-below: *app_context
+
+- id: nuxt-cache
+  name: Nuxt 构建缓存
+  why: Nuxt 的构建缓存。
+  recovery: 重新构建时生成。
+  match:
+    kind: name
+    pattern: '.nuxt'
+  category: build-artifact
+  safety: safe
+  action: delete
+  priority: 66
+  unless-below: *app_context
+
+- id: turbo-cache
+  name: Turborepo 缓存
+  why: 构建任务结果缓存。
+  recovery: 重新构建时生成。
+  match:
+    kind: name
+    pattern: '.turbo'
+  category: build-artifact
+  safety: safe
+  action: delete
+  priority: 66
+  unless-below: *app_context
+
+- id: parcel-cache
+  name: Parcel 缓存
+  why: 打包器缓存。
+  recovery: 重新构建时生成。
+  match:
+    kind: name
+    pattern: '.parcel-cache'
+  category: build-artifact
+  safety: safe
+  action: delete
+  priority: 66
+  unless-below: *app_context
+
+- id: svelte-kit
+  name: SvelteKit 构建产物
+  why: SvelteKit 的构建输出。
+  recovery: 重新构建时生成。
+  match:
+    kind: name
+    pattern: '.svelte-kit'
+  category: build-artifact
+  safety: safe
+  action: delete
+  priority: 66
+  unless-below: *app_context
+
+- id: angular-cache
+  name: Angular 构建缓存
+  why: Angular CLI 的缓存目录。
+  recovery: 重新构建时生成。
+  match:
+    kind: name
+    pattern: '.angular'
+  category: build-artifact
+  safety: safe
+  action: delete
+  priority: 66
+  unless-below: *app_context
+
+- id: storybook-static
+  name: Storybook 静态产物
+  why: Storybook 构建出的静态站点。
+  recovery: 重新执行 build-storybook。
+  match:
+    kind: name
+    pattern: 'storybook-static'
+  category: build-artifact
+  safety: safe
+  action: delete
+  priority: 64
+  unless-below: *app_context
+
+- id: coverage
+  name: 测试覆盖率报告
+  why: 测试覆盖率输出目录。
+  recovery: 重新跑测试时生成。
+  match:
+    kind: name
+    pattern: 'coverage'
+  category: build-artifact
+  safety: safe
+  action: delete
+  priority: 64
+  unless-below: *app_context
+
+- id: nyc-output
+  name: nyc 覆盖率输出
+  why: 覆盖率工具输出目录。
+  recovery: 重新跑测试时生成。
+  match:
+    kind: name
+    pattern: '.nyc_output'
+  category: build-artifact
+  safety: safe
+  action: delete
+  priority: 64
+  unless-below: *app_context
+
+- id: rust-target
+  name: Rust 编译产物
+  why: cargo 的编译输出目录。名字叫 target 的目录绝大多数是 Rust 项目产物，但**也有极少数项目把源码放进名为 target 的目录**，请扫一眼再决定。
+  recovery: 重新执行 cargo build 会重新编译（首次会慢）。
+  match:
+    kind: name
+    pattern: 'target'
+  category: build-artifact
+  safety: caution
+  action: review
+  priority: 50
+
+- id: python-venv
+  name: Python 虚拟环境
+  why: 项目隔离环境。**注意区分**：如果是你用 `python -m venv` 建的、有 requirements.txt 记录，删掉可重建；如果环境里有手工装过但没记录的包，就找不回来了。
+  recovery: 用 requirements.txt / pyproject.toml 重建。
+  match:
+    kind: name-glob
+    pattern: '.venv'
+  category: build-artifact
+  safety: caution
+  action: review
+  priority: 50
+
+- id: python-venv-plain
+  name: Python 虚拟环境
+  why: 同上，venv 命名变体。
+  recovery: 用依赖清单重建。
+  match:
+    kind: name-glob
+    pattern: 'venv'
+  category: build-artifact
+  safety: caution
+  action: review
+  priority: 48
+
+- id: dotnet-obj
+  name: .NET 中间产物
+  why: .NET 编译的中间文件目录。
+  recovery: 重新 dotnet build 时生成。
+  match:
+    kind: name
+    pattern: 'obj'
+  category: build-artifact
+  safety: caution
+  action: review
+  priority: 44
+
+- id: dist
+  name: 打包输出目录
+  why: 前端或库的打包输出。**有时 dist 就是最终要交付的产物**，删了要重新构建，请确认。
+  recovery: 重新执行构建命令。
+  match:
+    kind: name
+    pattern: 'dist'
+  category: build-artifact
+  safety: caution
+  action: review
+  priority: 40
+
+- id: build-dir
+  name: 构建输出目录
+  why: 名字叫 build 的目录含义很杂，可能是构建产物，也可能是项目源码的一部分，请人工确认。
+  recovery: 视项目而定。
+  match:
+    kind: name
+    pattern: 'build'
+  category: build-artifact
+  safety: caution
+  action: review
+  priority: 36
+
+# ===========================================================================
+# K. 安装包 / 归档（可能是你唯一的一份备份，需确认）
+# ===========================================================================
+
+- id: old-installer-msi
+  name: MSI 安装包
+  why: 已下载的安装包。软件装好后通常可以删除，但**保留一份可用于离线重装**。
+  recovery: 需要时重新下载。
+  match:
+    kind: ext
+    pattern: 'msi'
+  category: old-installer
+  safety: caution
+  action: review
+  priority: 30
+
+- id: archive-iso
+  name: 光盘镜像
+  why: ISO 镜像动辄几 GB，装完系统或软件后通常不再需要。
+  recovery: 需要时重新下载。
+  match:
+    kind: ext
+    pattern: 'iso'
+  category: old-installer
+  safety: caution
+  action: review
+  priority: 32
+
+- id: torrent-meta
+  name: 种子文件
+  why: BT 种子元数据，体积很小，删了不省空间，留着也无害。
+  recovery: 无需恢复。
+  match:
+    kind: ext
+    pattern: 'torrent'
+  category: old-installer
+  safety: safe
+  action: delete
+  priority: 20
+
+# ===========================================================================
+# K2. 用户根目录下的开发工具链 / 系统文件
+#
+# 这一批是根据一次真实扫描的「未识别清单」补出来的 —— 它们占了 19 GB，
+# 而且其中混着**绝对不能删**的东西（注册表配置单元、代码历史、工具链）。
+# 不覆盖它们的后果不是"少识别一点"，而是用户在一堆未识别项里
+# 根本分不清哪个能碰。
+# ===========================================================================
+
+- id: ntuser-dat
+  name: 用户注册表配置单元
+  why: 这是你整个用户账户的注册表数据本体，装着所有软件的配置、许可、
+     文件关联。**删除会导致无法登录、系统崩溃。**
+  recovery: 只能从系统还原点或备份恢复。
+  match:
+    kind: name-glob
+    pattern: 'ntuser.dat*'
+  category: app-data
+  safety: protected
+  action: none
+  priority: 99
+
+- id: usrclass-dat
+  name: 用户类注册表配置单元
+  why: 用户级的 COM 组件与文件类型注册信息，删除会破坏大量软件。
+  recovery: 只能从系统还原点或备份恢复。
+  match:
+    kind: name-glob
+    pattern: 'usrclass.dat*'
+  category: app-data
+  safety: protected
+  action: none
+  priority: 99
+
+- id: workbuddy-data
+  name: 工作助手数据目录
+  why: 存放本工具自身以及其它智能体工程的数据（技能、插件、工作记忆）。体积不大，但丢了不可恢复。
+  recovery: 无法恢复。
+  match:
+    kind: name
+    pattern: '.workbuddy'
+  category: app-data
+  safety: protected
+  action: none
+  priority: 98
+
+- id: git-repo
+  name: Git 仓库元数据
+  why: 项目的**完整提交历史与分支**都在这里。它看起来只是一堆二进制文件，
+     但如果还没推到远端，删掉就是永久丢失，工作区里剩下的只是最后一次提交的
+     快照。想省空间请用 `git gc` 而不是删目录。
+  recovery: 未推送的提交无法恢复。
+  match:
+    kind: name
+    pattern: '.git'
+  category: app-data
+  safety: keep
+  action: none
+  priority: 76
+
+- id: rustup-toolchains
+  name: Rust 工具链
+  why: rustup 安装的所有 Rust 编译器和标准库，通常 1–3 GB。它确实是
+     可重新下载的，但**删掉之后所有 Rust 项目会立刻构建失败**，
+     重新装又要下载几个 GB。想省空间更应该考虑删掉不用的旧版本。
+  recovery: 执行 rustup toolchain install 重新下载（需要几 GB 流量）。
+  match:
+    kind: name
+    pattern: '.rustup'
+  category: package-cache
+  safety: caution
+  action: review
+  priority: 64
+
+- id: cargo-home
+  name: Cargo 主目录
+  why: Rust 的包管理器主目录，含已安装的二进制工具与配置。
+     子目录里的缓存可以清，整体不要删。
+  recovery: 需要重新安装通过 cargo install 装过的工具。
+  match:
+    kind: name
+    pattern: '.cargo'
+  category: package-cache
+  safety: caution
+  action: review
+  priority: 54
+
+- id: gradle-home
+  name: Gradle 主目录
+  why: Gradle 的配置与版本分发包。caches 子目录可清，整体不要删。
+  recovery: 重新构建时自动下载。
+  match:
+    kind: name
+    pattern: '.gradle'
+  category: package-cache
+  safety: caution
+  action: review
+  priority: 54
+
+- id: maven-home
+  name: Maven 主目录
+  why: Maven 的配置与本地仓库，含 settings.xml 等配置。
+  recovery: 需要重新配置。
+  match:
+    kind: name
+    pattern: '.m2'
+  category: package-cache
+  safety: caution
+  action: review
+  priority: 54
+
+- id: stm32cubemx
+  name: STM32CubeMX 固件包
+  why: 嵌入式开发时下载的 STM32 固件库与中间件。单个芯片系列几百 MB，
+     装多了能到几 GB，**删掉只是下次生成工程时重新下载**。
+  recovery: 在 CubeMX 里重新下载对应系列的固件包。
+  match:
+    kind: name
+    pattern: '.stm32cubemx'
+  category: package-cache
+  safety: caution
+  action: review
+  priority: 62
+
+- id: stm32cube
+  name: STM32Cube 仓库
+  why: STM32 官方的固件与示例仓库副本，体积可达数 GB。
+  recovery: 重新执行 CubeMX 的仓库更新。
+  match:
+    kind: name
+    pattern: 'stm32cube'
+  category: package-cache
+  safety: caution
+  action: review
+  priority: 62
+
+- id: espressif
+  name: ESP-IDF 工具链
+  why: 乐鑫 ESP32 开发工具链与组件缓存，通常 1–3 GB。
+  recovery: 重新执行 install.sh / install.bat 下载。
+  match:
+    kind: name
+    pattern: '.espressif'
+  category: package-cache
+  safety: caution
+  action: review
+  priority: 62
+
+- id: platformio
+  name: PlatformIO 工具链
+  why: 嵌入式开发平台下载的编译器与框架包。
+  recovery: 首次构建时自动重新下载。
+  match:
+    kind: name
+    pattern: '.platformio'
+  category: package-cache
+  safety: caution
+  action: review
+  priority: 62
+
+- id: venv-glob
+  name: Python 虚拟环境（命名变体）
+  why: 名字里带 venv 的目录基本都是用 `python -m venv` 建的隔离环境。
+     **注意**：环境里可能有手工装过但没写进 requirements.txt 的包，
+     删了就找不回来了；有依赖清单的话可以放心重建。
+  recovery: 用 requirements.txt / pyproject.toml 重建。
+  match:
+    kind: name-glob
+    pattern: '*venv*'
+  category: build-artifact
+  safety: caution
+  action: review
+  priority: 47
+
+# ===========================================================================
+# K3. 其它 AI 编辑器 / 工具目录（这类软件换代很快，规则要能跟上）
+# ===========================================================================
+
+- id: ai-ide-qoder
+  name: Qoder 缓存
+  why: Qoder 编辑器的索引与缓存。
+  recovery: 下次启动自动重建。
+  match:
+    kind: name-glob
+    pattern: '.qoder'
+  category: ide-cache
+  safety: caution
+  action: review
+  priority: 60
+
+- id: ai-ide-trae
+  name: Trae 缓存
+  why: Trae 编辑器的索引与缓存。
+  recovery: 下次启动自动重建。
+  match:
+    kind: name-glob
+    pattern: '.trae*'
+  category: ide-cache
+  safety: caution
+  action: review
+  priority: 60
+
+- id: ai-ide-windsurf
+  name: Windsurf 缓存
+  why: Windsurf 编辑器的索引与缓存。
+  recovery: 下次启动自动重建。
+  match:
+    kind: name-glob
+    pattern: '.windsurf'
+  category: ide-cache
+  safety: caution
+  action: review
+  priority: 60
+
+- id: ai-ide-cursor-dir
+  name: Cursor 数据目录
+  why: Cursor 编辑器的用户数据目录。里面的缓存可清，配置不要删。
+  recovery: 视具体子目录而定。
+  match:
+    kind: name-glob
+    pattern: '.cursor'
+  category: ide-cache
+  safety: caution
+  action: review
+  priority: 60
+
+- id: ai-extension-cache
+  name: AI 编程插件缓存
+  why: 代码补全类插件下载的本地模型与索引缓存，单个可能几百 MB 到几 GB。
+  recovery: 插件会重新下载模型。
+  match:
+    kind: name-glob
+    pattern: '.codeium'
+  category: ide-cache
+  safety: caution
+  action: review
+  priority: 60
+
+- id: ai-agent-dirs
+  name: AI 智能体数据目录
+  why: 各类 AI 编程助手/智能体在用户目录下建的隐藏目录（配置、会话历史、技能缓存）。
+     体量通常不大，但里面可能有你的会话记录和自定义配置。
+  recovery: 视具体工具而定，多数需要重新登录和配置。
+  match:
+    kind: name-glob
+    pattern: '.claude'
+  category: app-data
+  safety: caution
+  action: review
+  priority: 58
+
+- id: ai-agent-agents-dir
+  name: 智能体工作目录
+  why: 智能体工具的工作目录，含会话与中间产物。
+  recovery: 视具体工具而定。
+  match:
+    kind: name-glob
+    pattern: '.agents'
+  category: app-data
+  safety: caution
+  action: review
+  priority: 58
+
+- id: ai-agent-temp
+  name: 智能体临时目录
+  why: 智能体运行时创建的临时目录，名字里带时间戳。一般可以安全删除。
+  recovery: 无需恢复。
+  match:
+    kind: name-glob
+    pattern: '.*-temp-*'
+  category: temp-file
+  safety: caution
+  action: review
+  priority: 56
+
+- id: infra-switch-config
+  name: 配置切换工具数据
+  why: 这类"配置切换器"保存的多份 API Key / 环境配置，删了要重新录入。
+  recovery: 需要重新配置。
+  match:
+    kind: name-glob
+    pattern: '.cc-switch'
+  category: app-data
+  safety: caution
+  action: review
+  priority: 58
+
+- id: stmcufinder
+  name: STM32 芯片查找器数据
+  why: STM32CubeMX 配套的芯片数据缓存。
+  recovery: 重新打开工具时自动下载。
+  match:
+    kind: name-glob
+    pattern: '.stmcufinder'
+  category: package-cache
+  safety: caution
+  action: review
+  priority: 62
+
+- id: xdg-local
+  name: 跨平台工具本地数据
+  why: 遵循 XDG 规范的跨平台工具（多为从 Linux 移植的开发工具）存放本地数据的目录。
+     里面既有缓存也有真实数据，请逐项确认。
+  recovery: 视具体工具而定。
+  match:
+    kind: name-glob
+    pattern: '.local'
+  category: app-data
+  safety: caution
+  action: review
+  priority: 52
+
+- id: xdg-config
+  name: 跨平台工具配置
+  why: 遵循 XDG 规范的跨平台工具存放配置的目录。**通常很小但很重要**，
+     删了等于重置这些工具的设置。
+  recovery: 需要重新配置。
+  match:
+    kind: name-glob
+    pattern: '.config'
+  category: app-data
+  safety: keep
+  action: none
+  priority: 52
+
+# ===========================================================================
+# K4. Windows 11 新增的用户级目录
+# ===========================================================================
+
+- id: cross-device
+  name: 手机连接 / 跨设备缓存
+  why: Windows「手机连接」功能同步过来的照片、短信和文件缓存。
+     **里面可能就有你想留的照片**，请先在「手机连接」里确认已保存到别处。
+  recovery: 重新配对手机后会再次同步。
+  match:
+    kind: name-glob
+    pattern: 'crossdevice*'
+  category: app-data
+  safety: caution
+  action: review
+  priority: 66
+
+- id: wps-cloud-files
+  name: WPS 云同步目录
+  why: WPS 云文档在本地同步下来的副本。**这是你的文档**，
+     删除会同步影响云端，请用 WPS 自己的「清理本地缓存」。
+  recovery: 从 WPS 云端重新下载（可能受回收站时限约束）。
+  match:
+    kind: name-glob
+    pattern: 'wps cloud files'
+  category: im-app
+  safety: keep
+  action: none
+  priority: 68
+
+- id: appdata-packages
+  name: 商店应用数据
+  why: Microsoft Store 安装的应用的本地数据与容器。里面既有缓存也有
+     应用数据（比如游戏的存档），不要整目录删。
+  recovery: 视具体应用而定。
+  match:
+    kind: path-suffix
+    pattern: 'appdata\local\packages'
+  category: app-data
+  safety: caution
+  action: review
+  priority: 58
+
+- id: inetcache
+  name: 系统网络缓存
+  why: WinINet 的网页与图片缓存（部分系统组件和旧式应用也用它）。
+  recovery: 自动重建。
+  match:
+    kind: path-contains
+    pattern: 'inetcache'
+  category: browser-cache
+  safety: safe
+  action: delete
+  priority: 74
+
+- id: webcache
+  name: 系统 Web 缓存数据库
+  why: 系统 Web 缓存与 Cookie 数据库。删了会掉一部分登录状态，
+     但系统会自动重建。体积通常不大，收益有限。
+  recovery: 自动重建，部分网站需重新登录。
+  match:
+    kind: path-contains
+    pattern: 'microsoft\windows\webcache'
+  category: browser-cache
+  safety: caution
+  action: review
+  priority: 72
+
+- id: appdata-crashdumps
+  name: 崩溃转储目录
+  why: 程序崩溃时写出的转储文件，每个几十到几百 MB。
+  recovery: 无需恢复。
+  match:
+    kind: path-suffix
+    pattern: 'appdata\local\crashdumps'
+  category: crash-dump
+  safety: safe
+  action: delete
+  priority: 84
+
+# ===========================================================================
+# K5. 零散的系统垃圾（单个很小，但数量巨大时会积少成多）
+# ===========================================================================
+
+- id: thumbs-db
+  name: 缩略图数据库
+  why: 系统为图片视频生成的缩略图文件。
+  recovery: 自动重建。
+  match:
+    kind: name
+    pattern: 'thumbs.db'
+  category: thumbnail-cache
+  safety: safe
+  action: delete
+  priority: 50
+
+- id: desktop-ini
+  name: 文件夹视图配置
+  why: 记录文件夹的显示方式，体积极小，删了也省不了空间，留着即可。
+  recovery: 自动重建。
+  match:
+    kind: name
+    pattern: 'desktop.ini'
+  category: app-data
+  safety: safe
+  action: none
+  priority: 30
+
+- id: ds-store
+  name: macOS 元数据残留
+  why: 从 macOS 或移动硬盘带过来的目录元数据，在 Windows 上完全无用。
+  recovery: 无需恢复。
+  match:
+    kind: name
+    pattern: '.ds_store'
+  category: temp-file
+  safety: safe
+  action: delete
+  priority: 50
+
+- id: macosx-resource
+  name: macOS 资源分叉残留
+  why: macOS 压缩包在 Windows 上解压后留下的元数据目录，完全无用。
+  recovery: 无需恢复。
+  match:
+    kind: name-glob
+    pattern: '__macosx'
+  category: temp-file
+  safety: safe
+  action: delete
+  priority: 50
+
+# ===========================================================================
+# K6. 数据盘（非系统盘）常见内容
+#
+# 这一批来自对一块真实 D 盘的扫描：1.48M 个文件、525 GB 未被识别。
+# 原规则库严重偏向系统盘（AppData / Windows / 开发缓存），一碰到
+# 「把软件和资料都装在 D 盘」这种典型用法就直接失效。
+#
+# **其中有一条是真 bug 的修复**：`D:\Program` 这类自定义软件安装目录
+# 原先没有规则，导致它内部的 `node_modules` 被 build-artifact 规则命中，
+# 报成「可安全回收」—— 那是 VS Code 自带扩展的依赖，删了会直接破坏
+# 已安装的软件。给安装根目录一条高 priority 的保护规则即可：继承机制
+# 会让其下所有内容都归到「已安装程序」，优先级 95 > 68 天然胜出。
+# ===========================================================================
+
+- id: custom-program-dir
+  name: 自定义软件安装目录
+  why: 你把软件装在了非默认位置。里面的内容属于已安装程序本体，
+     其中像 `node_modules` 这类名字看起来"可重建"的目录其实是软件自带的
+     运行时依赖，**删掉会直接让软件无法启动**。
+  recovery: 请通过软件自带的卸载程序或「设置 → 应用」卸载。
+  match:
+    kind: name
+    pattern: 'program'
+  category: app-data
+  safety: protected
+  action: none
+  priority: 95
+
+- id: user-programs-dir
+  name: 用户级程序安装目录
+  why: 软件的"仅为我安装"位置（VS Code、Cursor 等默认装在这里）。
+     里面的 `node_modules`、`resources\app` 都是程序自带的运行时文件，
+     **删掉会让软件打不开**。卸载请走「设置 → 应用」。
+  recovery: 需要重新安装。
+  match:
+    # 必须用 path-contains 而不是 path-suffix —— 这个目录下面全是子目录，
+    # path-suffix 只匹配"恰好以它结尾"的路径，等于永远不命中。
+    kind: path-contains
+    pattern: 'appdata\local\programs'
+  category: app-data
+  safety: protected
+  action: none
+  priority: 95
+
+- id: app-runtimes
+  name: 应用捆绑运行时
+  why: 软件自带的一整套运行时（Node / Python / 浏览器内核等）。
+     它看起来像"可以重新下载的依赖"，但实际是程序启动的必需品，
+     **删掉软件直接失效**。
+  recovery: 需要重新安装该软件。
+  match:
+    kind: path-contains
+    pattern: '\runtimes\'
+  category: app-data
+  safety: caution
+  action: review
+  priority: 90
+
+- id: matlab-install
+  name: MATLAB 安装目录
+  why: MATLAB 本体，几十 GB、上百万个文件。卸载请用官方卸载程序，
+     手动删会留下大量注册表与许可残留。
+  recovery: 需要重新安装。
+  match:
+    kind: name-glob
+    pattern: 'matlab*'
+  category: app-data
+  safety: protected
+  action: none
+  priority: 96
+
+- id: keil-install
+  name: Keil 嵌入式 IDE
+  why: Keil MDK / C51 的安装目录，含编译器与器件支持包。器件包可以在
+     Pack Installer 里按需卸载，但整体不要手动删。
+  recovery: 需要重新安装并重新下载器件包。
+  match:
+    kind: name-glob
+    pattern: 'keil*'
+  category: app-data
+  safety: caution
+  action: review
+  priority: 90
+
+- id: wegame-apps
+  name: WeGame 游戏
+  why: 通过 WeGame 下载的游戏本体，单个动辄几十上百 GB。
+     **想省空间应该在 WeGame 客户端里卸载**，手删会留下残留且下次
+     启动客户端时状态不一致。
+  recovery: 在 WeGame 里重新下载。
+  match:
+    kind: name-glob
+    pattern: 'wegameapps'
+  category: game-data
+  safety: keep
+  action: none
+  priority: 88
+
+- id: game-videos
+  name: 游戏录像
+  why: 游戏内置录屏或精彩时刻回放。
+  recovery: 需要时重新录制。
+  match:
+    kind: name-glob
+    pattern: 'gamevideos'
+  category: user-media
+  safety: keep
+  action: none
+  priority: 64
+
+- id: xunlei-download
+  name: 迅雷下载目录
+  why: 下载的安装包、镜像、影视资源。**这是你自己的文件**，
+     里面有已经装完没用的，也可能有还没用的。请按体积和日期自己挑。
+  recovery: 视删了什么而定。
+  match:
+    kind: name-glob
+    pattern: '迅雷下载'
+  category: user-download
+  safety: caution
+  action: review
+  priority: 66
+
+- id: cn-downloads
+  name: 下载目录
+  why: 中文命名的下载目录，内容同「下载目录」。
+  recovery: 视删了什么而定。
+  match:
+    kind: name-glob
+    pattern: '下载'
+  category: user-download
+  safety: caution
+  action: review
+  priority: 66
+
+- id: baidu-netdisk-download
+  name: 百度网盘下载目录
+  why: 从百度网盘下载到本地的文件。删了本地副本就没了，云端还在。
+  recovery: 从网盘重新下载。
+  match:
+    kind: name-glob
+    pattern: 'baidunetdiskdownload'
+  category: user-download
+  safety: caution
+  action: review
+  # 必须高于 baidu-netdisk(70)：否则 `BaiduNetdiskDownload` 会被那条
+  # 更宽泛的 path-contains 规则抢先命中，归因变成「网盘缓存」而非「下载目录」。
+  priority: 72
+
+- id: desktop-relocated
+  name: 桌面（已迁移到本盘）
+  why: 你把桌面文件夹移到了 D 盘。这里放的就是你桌面上的文件，属于个人数据。
+  recovery: 误删只能靠备份。
+  match:
+    kind: name-glob
+    pattern: '桌面'
+  category: user-document
+  safety: keep
+  action: none
+  priority: 70
+
+- id: backup-dirs
+  name: 备份目录
+  why: 备份数据。**它是你出事时唯一的退路**，工具不会碰。
+     想省空间应该先去核对备份是否有效，再决定淘汰哪一份。
+  recovery: 备份删了就没有备份了。
+  match:
+    kind: name-glob
+    pattern: '备份*'
+  category: user-document
+  safety: keep
+  action: none
+  priority: 70
+
+- id: backup-dirs-en
+  name: 备份目录（英文名）
+  why: 同上，备份数据，工具不会碰。
+  recovery: 备份删了就没有备份了。
+  match:
+    kind: name-glob
+    pattern: 'backup*'
+  category: user-document
+  safety: keep
+  action: none
+  priority: 70
+
+- id: study-materials
+  name: 学习资料目录
+  why: 教程、课件、开发板资料。体积可能不小，但价值在于你还没学完 ——
+     **这类目录最适合先归档到移动硬盘或网盘，而不是删除**。
+  recovery: 需要重新下载或索要。
+  match:
+    kind: name-glob
+    pattern: '*资料*'
+  category: user-document
+  safety: keep
+  action: none
+  priority: 68
+
+- id: study-dir
+  name: 学习目录
+  why: 学习与练习用的目录，属于个人数据。
+  recovery: 误删只能靠备份。
+  match:
+    kind: name-glob
+    pattern: '学习'
+  category: user-document
+  safety: keep
+  action: none
+  priority: 68
+
+- id: course-videos
+  name: 课程视频 / 教程
+  why: 教程、课程类内容，通常是大体积视频。看完的可以归档到别处，
+     但**建议先归档再删**。
+  recovery: 需要重新获取。
+  match:
+    kind: name-glob
+    pattern: '*教程*'
+  category: user-media
+  safety: keep
+  action: none
+  priority: 62
+
+- id: family-photos
+  name: 照片目录
+  why: 照片是**最不该删、也最该有备份**的一类数据。删之前请确认云相册或
+     其他设备上有副本。
+  recovery: 误删只能靠备份或云相册。
+  match:
+    kind: name-glob
+    pattern: '*照片*'
+  category: user-media
+  safety: keep
+  action: none
+  priority: 62
+
+- id: pics-dir
+  name: 图片目录（中文名）
+  why: 图片资料，属于个人数据。
+  recovery: 误删只能靠备份。
+  match:
+    kind: name-glob
+    pattern: '*图片*'
+  category: user-media
+  safety: keep
+  action: none
+  priority: 60
+
+- id: video-dir-cn
+  name: 视频目录（中文名）
+  why: 视频资料。视频是最占空间的一类，也是最该先挑再删的一类 ——
+     建议按体积排序后逐个决定。
+  recovery: 误删只能靠备份。
+  match:
+    kind: name-glob
+    pattern: '*视频*'
+  category: user-media
+  safety: keep
+  action: none
+  priority: 60
+
+- id: travel-photos
+  name: 旅行照片
+  why: 照片是**最不该删、也最该有备份**的一类数据。
+  recovery: 误删只能靠备份或云相册。
+  match:
+    kind: name-glob
+    pattern: '*photo*'
+  category: user-media
+  safety: keep
+  action: none
+  priority: 64
+
+- id: invoice-files
+  name: 发票与票据
+  why: 发票、报销单据。**体积很小但补办极麻烦**，工具不会碰。
+  recovery: 需要重新开具。
+  match:
+    kind: name-glob
+    pattern: '*发票*'
+  category: user-document
+  safety: keep
+  action: none
+  priority: 70
+
+- id: cloud-music-cache
+  name: 音乐软件缓存
+  why: 音乐客户端下载到本地的歌曲与缓存。会员到期后可能听不了，
+     删了要重新下载。
+  recovery: 重新下载。
+  match:
+    kind: name-glob
+    pattern: 'cloudmusic'
+  category: user-media
+  safety: caution
+  action: review
+  priority: 62
+
+- id: ai-model-weights
+  name: AI 模型权重
+  why: 下载的语音识别 / 大模型权重文件，单个几百 MB 到几 GB。
+     **明确知道不会再用的可以删**，否则重下要花不少流量和时间。
+  recovery: 重新下载。
+  match:
+    kind: name-glob
+    pattern: '*models*'
+  category: package-cache
+  safety: caution
+  action: review
+  priority: 58
+
+- id: windows-apps-drive
+  name: 商店应用（非系统盘）
+  why: 从 Microsoft Store 安装到本盘的应用，必须通过系统卸载。
+  recovery: 在「已安装的应用」中重新安装。
+  match:
+    kind: name-glob
+    pattern: 'windowsapps'
+  category: app-data
+  safety: protected
+  action: none
+  priority: 95
+
+- id: solidworks-license
+  name: SolidWorks 许可服务
+  why: 授权管理服务，删了 SolidWorks 会无法启动。
+  recovery: 需要重新安装许可服务。
+  match:
+    kind: name-glob
+    pattern: 'solidworks*'
+  category: app-data
+  safety: protected
+  action: none
+  priority: 92
+
+- id: printer-driver-solution
+  name: 打印机驱动套件
+  why: 打印机厂商的完整驱动与工具包。
+  recovery: 需要重新下载安装。
+  match:
+    kind: name-glob
+    pattern: 'lj*p*_full_solution'
+  category: app-data
+  safety: caution
+  action: review
+  priority: 60
+
+- id: config-msi
+  name: 安装事务残留
+  why: MSI 安装过程中断时留下的临时登记目录。**它本身可以清理**，
+     但如果某个软件正卡在安装状态，删它会让卸载列表里留下幽灵条目。
+     稳妥做法是先跑一次系统自带的「安装和卸载疑难解答」。
+  recovery: 无需恢复；受影响的软件重新安装即可。
+  match:
+    kind: name-glob
+    pattern: 'config.msi'
+  category: temp-file
+  safety: caution
+  action: review
+  priority: 72
+
+- id: delivery-optimization-dir
+  name: 传递优化缓存目录
+  why: 更新分发用的 P2P 缓存目录，删掉不影响任何功能。
+  recovery: 无需恢复。
+  match:
+    kind: name-glob
+    pattern: 'deliveryoptimization'
+  category: os-update-leftover
+  safety: safe
+  action: delete
+  priority: 86
+  unless-below:
+    # 注：锚点 &app_context 定义在 J 节，本规则位于其之前无法用别名引用，
+    # 故在此写明完整列表。修改语境定义时**记得同步这两处**（见 validate_rules.py 的校验）。
+    - '\extensions\'
+    - '\resources\app'
+    - 'app.asar'
+    - '\programs\'
+    - '\runtimes\'
+    - '\sandbox_runtime'
+    - '\site-packages\'
+    - '\lib\python'
+    - '\lib\node'
+    - '\.vscode\'
+    - '\.qoder\'
+    - '\.cursor\'
+    - '\.windsurf\'
+    - '\.trae'
+
+- id: sysreset
+  name: 系统重置残留
+  why: 执行系统重置 / 恢复时留下的中间数据。
+  recovery: 无需恢复。
+  match:
+    kind: name-glob
+    pattern: '$sysreset'
+  category: os-update-leftover
+  safety: caution
+  action: review
+  priority: 84
+
+- id: espressif-drive
+  name: 乐鑫 ESP 工具链（非默认位置）
+  why: ESP32/ESP8266 开发工具链与 SDK，通常 1–3 GB。
+  recovery: 重新执行官方安装脚本下载。
+  match:
+    kind: name-glob
+    pattern: 'espressif'
+  category: package-cache
+  safety: caution
+  action: review
+  priority: 62
+
+- id: pe-tools
+  name: PE 维护盘工具
+  why: 系统维护 / 分区工具，体积小但**出事时是救命的**，建议留着。
+  recovery: 需要重新制作。
+  match:
+    kind: name-glob
+    pattern: '*winpe*'
+  category: app-data
+  safety: keep
+  action: none
+  priority: 62
+
+- id: video-project-dir
+  name: 视频剪辑项目
+  why: 剪辑软件的工程目录与素材。**素材删了工程就打不开了**。
+  recovery: 需要重新导入素材。
+  match:
+    kind: name-glob
+    pattern: 'jianying'
+  category: user-media
+  safety: keep
+  action: none
+  priority: 62
+
+- id: vmware-install
+  name: VMware 安装目录
+  why: 虚拟机软件的安装文件。**注意它与虚拟机镜像（.vmdk）是两回事**，
+     真正占空间的是镜像，那部分请用本工具搜 .vmdk 单独处理。
+  recovery: 需要重新安装。
+  match:
+    kind: name-glob
+    pattern: 'vmware*'
+  category: app-data
+  safety: protected
+  action: none
+  priority: 96
+
+- id: libreoffice-install
+  name: LibreOffice 安装目录
+  why: 办公套件本体，上万个文件。卸载请走官方卸载程序。
+  recovery: 需要重新安装。
+  match:
+    kind: name-glob
+    pattern: 'libreoffice*'
+  category: app-data
+  safety: protected
+  action: none
+  priority: 96
+
+- id: pandoc-install
+  name: Pandoc 安装目录
+  why: 文档转换工具本体。
+  recovery: 需要重新下载。
+  match:
+    kind: name-glob
+    pattern: 'pandoc*'
+  category: app-data
+  safety: protected
+  action: none
+  priority: 96
+
+- id: lenovo-store
+  name: 联想应用商店
+  why: 联想预装的应用商店及其下载缓存。
+  recovery: 需要重新下载应用。
+  match:
+    kind: name-glob
+    pattern: 'lenovosoftstore'
+  category: app-data
+  safety: caution
+  action: review
+  priority: 64
+
+- id: lenovo-download
+  name: 联想商店下载目录
+  why: 从应用商店下载的安装包。
+  recovery: 需要时重新下载。
+  match:
+    kind: name-glob
+    pattern: 'lestoredownload'
+  category: old-installer
+  safety: caution
+  action: review
+  priority: 66
+
+- id: embedded-lanqiao
+  name: 蓝桥杯竞赛资料
+  why: 竞赛备赛资料与代码，属于个人数据。
+  recovery: 误删只能靠备份。
+  match:
+    kind: name-glob
+    pattern: '*lanqiao*'
+  category: user-document
+  safety: keep
+  action: none
+  priority: 64
+
+- id: embedded-chip-dirs
+  name: 嵌入式芯片资料
+  why: 单片机 / 射频芯片的例程、手册与工具链资料。
+  recovery: 需要重新获取。
+  match:
+    kind: name-glob
+    pattern: 'cc2530'
+  category: user-document
+  safety: keep
+  action: none
+  priority: 62
+
+- id: esp-firmware
+  name: ESP 固件与烧写工具
+  why: ESP8266/ESP32 的固件与烧写工具，属于开发资料。
+  recovery: 需要重新获取。
+  match:
+    kind: name-glob
+    pattern: 'esp8266*'
+  category: user-document
+  safety: keep
+  action: none
+  priority: 62
+
+- id: ai-tool-dir-generic
+  name: AI 工具目录
+  why: AI 编程 / 对话工具的本地数据目录。体量通常不大，
+     但可能含会话历史与自定义配置。
+  recovery: 视具体工具而定。
+  match:
+    kind: name-glob
+    pattern: 'codex'
+  category: app-data
+  safety: caution
+  action: review
+  priority: 60
+
+- id: ai-tool-trae-generic
+  name: AI 编辑器目录
+  why: AI 编辑器的安装或数据目录。
+  recovery: 视具体情况而定。
+  match:
+    kind: name-glob
+    pattern: 'trea'
+  category: app-data
+  safety: caution
+  action: review
+  priority: 60
+
+# ===========================================================================
+# L. 用户数据：明确告诉用户「这些不该由工具动」
+# ===========================================================================
+
+- id: user-downloads
+  name: 下载目录
+  why: 这是你自己下载的东西，里面往往混着有用和无用的文件。工具不会自动清理，请用「按体积 + 按时间」的方式人工筛。
+  recovery: 视删了什么而定。
+  match:
+    kind: path-suffix
+    pattern: 'downloads'
+  category: user-download
+  safety: caution
+  action: review
+  priority: 60
+
+- id: user-documents
+  name: 个人文档
+  why: 你的文档资料，属于必须保留的数据。
+  recovery: 误删只能靠备份。
+  match:
+    kind: path-suffix
+    pattern: 'documents'
+  category: user-document
+  safety: keep
+  action: none
+  priority: 58
+
+- id: user-desktop
+  name: 桌面
+  why: 桌面上的文件属于个人数据。
+  recovery: 误删只能靠备份。
+  match:
+    kind: path-suffix
+    pattern: 'desktop'
+  category: user-document
+  safety: keep
+  action: none
+  priority: 58
+
+- id: user-pictures
+  name: 图片
+  why: 个人图片资料。
+  recovery: 误删只能靠备份。
+  match:
+    kind: path-suffix
+    pattern: 'pictures'
+  category: user-media
+  safety: keep
+  action: none
+  priority: 58
+
+- id: user-videos
+  name: 视频
+  why: 个人视频资料，往往是最占地方也最舍不得删的。
+  recovery: 误删只能靠备份。
+  match:
+    kind: path-suffix
+    pattern: 'videos'
+  category: user-media
+  safety: keep
+  action: none
+  priority: 58
+
+- id: user-music
+  name: 音乐
+  why: 个人音乐资料。
+  recovery: 误删只能靠备份。
+  match:
+    kind: path-suffix
+    pattern: 'music'
+  category: user-media
+  safety: keep
+  action: none
+  priority: 58
+
+- id: onedrive
+  name: OneDrive 同步目录
+  why: 云同步目录，本地删除会同步删掉云端文件。
+  recovery: 可从云端回收站找回（有时限）。
+  match:
+    kind: path-contains
+    pattern: 'onedrive'
+  category: user-document
+  safety: keep
+  action: none
+  priority: 62
+
+- id: steam-games
+  name: Steam 游戏
+  why: 游戏本体，重新下载要几十 GB 流量和时间。想省空间应该用 Steam 的「卸载」。
+  recovery: 通过 Steam 重新下载。
+  match:
+    kind: path-contains
+    pattern: 'steamapps\common'
+  category: game-data
+  safety: keep
+  action: none
+  priority: 62
+
+- id: epic-games
+  name: Epic 游戏
+  why: 游戏本体，请在 Epic 客户端里卸载。
+  recovery: 通过客户端重新下载。
+  match:
+    kind: path-contains
+    pattern: 'epic games'
+  category: game-data
+  safety: keep
+  action: none
+  priority: 60
+
+# ===========================================================================
+# M. 兜底：AppData / ProgramData 泛匹配（必须排在最末）
+# ===========================================================================
+
+- id: appdata-roaming
+  name: 应用漫游数据
+  why: 各软件的配置与数据。**里面既有纯缓存也有你的账号配置**，必须逐个确认，不要整目录删。
+  recovery: 视具体软件而定，多数需要重新配置。
+  match:
+    kind: path-suffix
+    pattern: 'appdata\roaming'
+  category: app-data
+  safety: caution
+  action: review
+  priority: 30
+
+- id: appdata-local
+  name: 应用本地数据
+  why: 各软件的本地缓存与数据。多数是缓存，但也可能含本地数据库。
+  recovery: 视具体软件而定。
+  match:
+    kind: path-suffix
+    pattern: 'appdata\local'
+  category: app-data
+  safety: caution
+  action: review
+  priority: 29
+
+- id: appdata
+  name: 应用数据目录
+  why: 应用的本地存储区。
+  recovery: 视具体软件而定。
+  match:
+    kind: path-suffix
+    pattern: 'appdata'
+  category: app-data
+  safety: caution
+  action: review
+  priority: 28
+
+- id: programdata
+  name: 程序公共数据
+  why: 软件存放公共数据的地方，多数不能删。
+  recovery: 视具体软件而定。
+  match:
+    kind: path-suffix
+    pattern: 'programdata'
+  category: app-data
+  safety: caution
+  action: review
+  priority: 28
+
+- id: windows-dir
+  name: Windows 系统目录
+  why: 系统目录，除本规则库明确标注为可回收的子目录外，其余不要动。
+  recovery: 只能重装系统。
+  match:
+    kind: path-suffix
+    pattern: 'windows'
+  category: app-data
+  safety: protected
+  action: none
+  priority: 27

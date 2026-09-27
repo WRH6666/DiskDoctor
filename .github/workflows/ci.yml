@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows:
+    name: 构建与测试（Windows）
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: 缓存依赖
+        uses: Swatinem/rust-cache@v2
+
+      # 用 runner 默认的 MSVC 工具链构建。
+      #
+      # 这一步同时回答一个 README 里承诺的问题：「MSVC 能不能构建」。
+      # 代码里的 Win32 调用是手工 FFI（`#[link(name = "kernel32")]` +
+      # `extern "system"`），不是 windows-sys —— 正是为了让两种工具链
+      # 都能编。GNU 那条路已在本地验证过，MSVC 由这里验证。
+      - name: 构建
+        run: cargo build --release
+
+      - name: 测试
+        run: cargo test --workspace
+
+      - name: 规则库校验
+        run: |
+          python -m pip install --quiet pyyaml
+          python scripts/validate_rules.py
