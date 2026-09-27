@@ -28,6 +28,40 @@ import sys
 import tempfile
 from pathlib import Path
 
+
+# --------------------------------------------------------------- 控制台编码
+def use_utf8_output() -> None:
+    """把标准输出/错误切到 UTF-8，让脚本在**任何 Windows 语言环境**下都能跑。
+
+    为什么必须做：这些脚本会打印中文，而中文只在中文 Windows 上才默认能编码。
+    英文环境的控制台代码页是 cp1252，`print("规则库")` 会直接抛：
+
+        UnicodeEncodeError: 'charmap' codec can't encode characters
+
+    也就是说脚本在非中文机器上**根本跑不起来**。本项目的 CI 是英文环境
+    （GitHub Actions 的 windows-latest），第一次跑就撞上了这个 ——
+    本机是中文环境，所以本地怎么测都测不出来。
+
+    `errors="replace"` 兜底：万一终端仍不支持某些字符，显示成 ? 也比崩掉好。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError):
+            # AttributeError: Python < 3.7；ValueError/OSError: 输出被重定向到
+            # 不支持 reconfigure 的对象（如某些包装器）。都不该让脚本挂掉。
+            pass
+
+
+# 在 import 时就生效 —— 这是刻意的。
+#
+# 原因：scripts/ 下的脚本一共有 9 个，全都打印中文。如果改成"每个脚本自己调用"，
+# 早晚会有新脚本忘了加，而漏掉的后果是**在别人机器上直接崩溃**。
+# 放在这里，任何 import 了 _paths 的脚本自动具备这个能力。
+# （dd_proto.py 通过 validate_rules 间接导入，同样覆盖。）
+use_utf8_output()
+
+
 # ------------------------------------------------------------------ 基本路径
 
 ROOT = Path(__file__).resolve().parent.parent

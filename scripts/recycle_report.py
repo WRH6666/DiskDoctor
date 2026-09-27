@@ -28,12 +28,24 @@ import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 
+# 让脚本在非中文 Windows 上也能跑：英文环境的控制台代码页是 cp1252，
+# 直接 print 中文会抛 UnicodeEncodeError。
+#
+# 这里不复用 scripts/_paths.py 里的同名函数，是为了让本脚本保持**自包含** ——
+# 它可以被单独拷到任何地方运行，不依赖仓库里的其它文件。
+for _s in (sys.stdout, sys.stderr):
+    try:
+        _s.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError, OSError):
+        pass
+
 VOL = "C:\\"
 MB = 1024 * 1024
 GB = 1024 ** 3
 
-# 当前用户的回收站目录（SID 后缀 -1001 表示本机第一个普通用户）
-RECYCLE = r"C:\$Recycle.Bin\S-1-5-21-2599031338-2080917007-1696161989-1001"
+# 回收站目录不写死 —— 用 find_recycle_dirs() 扫 $Recycle.Bin 下的 SID 子目录。
+# （原本这里硬编码了一个 SID，等于把自己的机器标识写进仓库，而且那段代码
+#   实际从未被调用。）
 
 
 def find_recycle_dirs():
