@@ -35,7 +35,9 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 
 $AppDir = $PSScriptRoot
 $Exe = Join-Path $AppDir "diskdoctor.exe"
-$OutDir = Join-Path $env:LOCALAPPDATA "DiskDoctor\out"
+
+# $OutDir 的值在 Get-OutDir 定义之后才赋值 —— 那个函数要探测哪可写，
+# 而 PowerShell 要求函数先定义才能调用。
 
 # ---------------------------------------------------------------- 基础
 
@@ -114,14 +116,55 @@ function Start-Detached {
     return [System.Diagnostics.Process]::Start($psi)
 }
 
-# 找一个可写的输出目录。程序目录可能在 Program Files 下（只读），
-# 所以统一写到 LOCALAPPDATA。
+# 找一个可写的输出目录并返回。
+#
+# 优先放在**程序旁边**，其次才退到 LOCALAPPDATA。
+#
+# 原来的逻辑是"程序目录可能在 Program Files 下（只读），所以统一写
+# LOCALAPPDATA"—— 装到 Program Files 时这是对的，但**便携版（解压即用）
+# 就错了**：用户把 exe 解压到桌面或下载目录，报告却跑进了
+# `%LOCALAPPDATA%\DiskDoctor\out` 这个深层隐藏目录，他根本找不到 ——
+# 相当于"扫完了但看不到结果"。
+#
+# 所以改成先试程序目录：能写就用（用户一眼能看到报告在哪），
+# 不能写（Program Files / 只读介质）再退到 LOCALAPPDATA。
 function Get-OutDir {
-    if (-not (Test-Path $OutDir)) {
-        New-Item -ItemType Directory -Path $OutDir -Force | Out-Null
+    $local = Join-Path $env:LOCALAPPDATA "DiskDoctor\out"
+
+    foreach ($cand in @((Join-Path $AppDir "DiskDoctor-输出"), $local)) {
+        try {
+            if (-not (Test-Path $cand)) {
+                New-Item -ItemType Directory -Path $cand -Force -ErrorAction Stop | Out-Null
+            }
+            # 建出来不等于能写（只读介质 / 权限受限），实际写个探针文件确认。
+            $probe = Join-Path $cand ".diskdoctor-probe"
+            Set-Content -Path $probe -Value "probe" -ErrorAction Stop
+
+            # 清探针 —— 这一步**必须自己吃掉异常**，不能让它影响"可写"的判断。
+            #
+            # 踩过的坑：某些环境（本机就是）对删除操作有拦截层，会强制抛出
+            # `SAFE_DELETE_FAIL_CLOSED`，而且**无视 -ErrorAction SilentlyContinue**。
+            # 这段清理原本在外层 try 里，异常被外层 catch 接住，于是程序误判
+            # "这个目录不可写"并回退到 LOCALAPPDATA —— 结果是目录建了、报告却
+            # 写到别处，用户找不到。清不掉一个探针文件，不代表目录不可写。
+            try {
+                Remove-Item $probe -Force -ErrorAction Stop
+            } catch {
+                # 清不掉就留着（几字节），不影响任何功能
+            }
+
+            return $cand
+        } catch {
+            continue
+        }
     }
-    return $OutDir
+
+    # 两处都写不了：还是返回 LOCALAPPDATA 的路径，让后续报错能指出位置
+    return $local
 }
+
+# 解析一次，后面共用（Get-SearchDirs 也要用它）。
+$OutDir = Get-OutDir
 
 # 取「已知文件夹」的真实位置。
 #
